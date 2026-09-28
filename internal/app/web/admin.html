@@ -1272,8 +1272,8 @@ textarea.form-control {
         </div>
         <div style="margin-bottom:12px">
           <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-ter);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">批量导入 SOCKS5（每行一个严格 URI）</label>
-          <textarea id="socks5Batch" rows="4" class="form-control" placeholder="socks5://host:port&#10;socks5://username:password@host:port&#10;# 空行和 # 注释行会忽略"></textarea>
-          <p style="font-size:12px;color:var(--text-ter);line-height:1.5;margin-top:6px">只接受 <code>socks5://[用户名:密码@]Host:Port</code> 格式；任一行格式错误将拒绝本次导入。</p>
+          <textarea id="socks5Batch" rows="4" class="form-control" placeholder="socks5://host:port&#10;socks5://username:password@host:port&#10;username:password@host:port&#10;# 空行和 # 注释行会忽略"></textarea>
+          <p style="font-size:12px;color:var(--text-ter);line-height:1.5;margin-top:6px">支持 <code>socks5://[用户名:密码@]Host:Port</code> 或 <code>用户名:密码@Host:Port</code>；复制内容中的 <code>\@</code> 也会自动识别。</p>
         </div>
         <div style="margin-bottom:12px">
           <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-ter);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">当前生效路由</label>

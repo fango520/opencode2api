@@ -10,16 +10,22 @@ import (
 	"strings"
 )
 
-// parseSocks5Line accepts one strict URI per line:
-// socks5://host:port or socks5://username:password@host:port.
+// parseSocks5Line accepts the panel's SOCKS5 forms:
+// socks5://host:port, socks5://username:password@host:port, and the common
+// provider export username:password@host:port. A backslash-escaped @ used by
+// some provider copy buttons is normalized as the authority separator.
 func parseSocks5Line(line string) (Socks5Proxy, error) {
 	line = strings.TrimSpace(line)
 	if line == "" || strings.ContainsAny(line, " \t\r\n") {
 		return Socks5Proxy{}, fmt.Errorf("must be a non-empty socks5 URI")
 	}
+	line = strings.ReplaceAll(line, `\@`, "@")
+	if !strings.Contains(line, "://") {
+		line = "socks5://" + line
+	}
 	u, err := url.Parse(line)
 	if err != nil || u.Scheme != "socks5" || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
-		return Socks5Proxy{}, fmt.Errorf("expected socks5://[username:password@]host:port")
+		return Socks5Proxy{}, fmt.Errorf("expected socks5://[username:password@]host:port or username:password@host:port")
 	}
 	host, port, err := net.SplitHostPort(u.Host)
 	if err != nil || host == "" || port == "" {

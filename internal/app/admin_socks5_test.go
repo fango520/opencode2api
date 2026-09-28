@@ -8,6 +8,8 @@ func TestParseSocks5Line(t *testing.T) {
 	}{
 		{"socks5://127.0.0.1:1080", "127.0.0.1:1080", "", ""},
 		{"socks5://alice:secret@example.com:443", "example.com:443", "alice", "secret"},
+		{"alice:secret@example.com:443", "example.com:443", "alice", "secret"},
+		{"alice:secret\\@example.com:443", "example.com:443", "alice", "secret"},
 		{"socks5://[::1]:1080", "[::1]:1080", "", ""},
 	}
 	for _, tc := range tests {
@@ -23,7 +25,6 @@ func TestParseSocks5Line(t *testing.T) {
 
 func TestParseSocks5LineRejectsInvalid(t *testing.T) {
 	for _, line := range []string{
-		"127.0.0.1:1080",
 		"http://127.0.0.1:1080",
 		"socks5://127.0.0.1",
 		"socks5://127.0.0.1:0",
