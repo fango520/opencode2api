@@ -80,7 +80,7 @@ func adminKeyTestHandler(w http.ResponseWriter, r *http.Request) {
 		mode = AuthRouteGo
 		useGo = true
 	}
-	auth := UpstreamAuth{Token: key.Key, Mode: mode, Source: "admin-key-test"}
+	auth := UpstreamAuth{Token: key.Key, Mode: mode, Source: "admin-key-test", Socks5Proxy: strings.TrimSpace(key.Socks5Proxy)}
 	bodyMap := map[string]any{
 		"model": payload.Model,
 		"messages": []any{map[string]any{

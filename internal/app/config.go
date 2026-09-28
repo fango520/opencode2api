@@ -5,6 +5,7 @@ import (
 	"github.com/6Kmfi6HP/opencode2api/internal/config"
 	"github.com/6Kmfi6HP/opencode2api/internal/domain"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -205,6 +206,7 @@ func applyConfig(cfg AppConfig) {
 	socks5Mu.Lock()
 	if cfg.Socks5Proxies != nil {
 		socks5Proxies = cfg.Socks5Proxies
+		socks5BoundClients = map[string]*http.Client{}
 	}
 	if activeSocks5 != cfg.ActiveSocks5 {
 		activeSocks5 = cfg.ActiveSocks5

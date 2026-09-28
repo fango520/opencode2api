@@ -244,7 +244,24 @@ func selectPoolKey(auth UpstreamAuth, modelID string, attempt ...int) (UpstreamA
 
 	out := auth
 	out.Token = picked.Key
+	out.Socks5Proxy = strings.TrimSpace(picked.Socks5Proxy)
 	return out, picked.ID, true
+}
+
+func validateKeyPoolProxyBindings(p KeyPool, proxies []Socks5Proxy) error {
+	known := make(map[string]bool, len(proxies))
+	for _, proxy := range proxies {
+		if addr := strings.TrimSpace(proxy.Addr); addr != "" {
+			known[addr] = true
+		}
+	}
+	for i, key := range p.Keys {
+		addr := strings.TrimSpace(key.Socks5Proxy)
+		if addr != "" && !known[addr] {
+			return fmt.Errorf("keys[%d]: socks5_proxy %q is not configured", i, addr)
+		}
+	}
+	return nil
 }
 
 // reportKeyResult records an upstream attempt for failover accounting.

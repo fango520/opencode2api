@@ -159,6 +159,19 @@ func adminConfigHandler(w http.ResponseWriter, r *http.Request) {
 				json.NewEncoder(w).Encode(map[string]string{"error": "invalid key_pool: " + err.Error()})
 				return
 			}
+			socks5Mu.RLock()
+			currentProxies := append([]Socks5Proxy(nil), socks5Proxies...)
+			socks5Mu.RUnlock()
+			proxies := currentProxies
+			if payload.Socks5Proxies != nil {
+				proxies = payload.Socks5Proxies
+			}
+			if err := validateKeyPoolProxyBindings(payload.KeyPool, proxies); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "invalid key_pool: " + err.Error()})
+				return
+			}
 		}
 		if payload.DefaultRoute != "" && payload.DefaultRoute != "zen" && payload.DefaultRoute != "go" && payload.DefaultRoute != "auto" {
 			w.Header().Set("Content-Type", "application/json")

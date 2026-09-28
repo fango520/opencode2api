@@ -176,9 +176,10 @@ const socks5RR = "__round_robin__"
 var socks5RRIndex uint32
 
 var (
-	socks5Client     *http.Client // 缓存的 SOCKS5 客户端
-	socks5ClientAddr string       // 缓存对应的代理地址
-	socks5Sticky     bool         // 轮询模式下按会话固定出口（默认 true）
+	socks5Client       *http.Client // 缓存的 SOCKS5 客户端
+	socks5ClientAddr   string       // 缓存对应的代理地址
+	socks5BoundClients = map[string]*http.Client{}
+	socks5Sticky       bool // 轮询模式下按会话固定出口（默认 true）
 )
 
 // upstreamBaseURLs holds the normalized upstream base URL list (e.g. reversed
@@ -356,6 +357,11 @@ func selectUpstreamTarget(auth UpstreamAuth, bodyMap map[string]any, upstreamHea
 	proxies := socks5Proxies
 	baseURLs := upstreamBaseURLs
 	socks5Mu.RUnlock()
+	if bound := strings.TrimSpace(auth.Socks5Proxy); bound != "" {
+		if client := getHTTPClientForProxy(bound); client != nil {
+			return selectBaseURLForRequest(auth, bodyMap, upstreamHeaders, ocScope), client
+		}
+	}
 
 	// 快路径：单域名且代理维也不需要 sticky 绑定。跟随下游 OpenCode 会话
 	// 时，即使只有一个上游域名也要保留 sticky entry：这样本地重试能基于
@@ -385,6 +391,20 @@ func selectUpstreamTarget(auth UpstreamAuth, bodyMap map[string]any, upstreamHea
 		return base, getHTTPClient()
 	}
 	return base, entry.client
+}
+
+// selectBaseURLForRequest keeps per-key proxy binding independent from the
+// global proxy route while retaining the existing domain/session affinity.
+func selectBaseURLForRequest(auth UpstreamAuth, bodyMap map[string]any, upstreamHeaders http.Header, ocScope string) string {
+	key := stickyKeyForRequest(auth, bodyMap, upstreamHeaders, ocScope)
+	bases := getUpstreamBaseURLs()
+	if len(bases) == 0 {
+		return normalizeBaseURLs(nil)[0]
+	}
+	if len(bases) == 1 {
+		return bases[0]
+	}
+	return bases[int(fnv32a(key)%uint32(len(bases)))]
 }
 
 // lookupOrCreateSticky 查找或创建会话的 (域名, 代理) 绑定。同一 key 的连续
@@ -519,6 +539,30 @@ func getHTTPClient() *http.Client {
 		socks5ClientAddr = activeSocks5
 	}
 	return client
+}
+
+func getHTTPClientForProxy(addr string) *http.Client {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return nil
+	}
+	socks5Mu.Lock()
+	defer socks5Mu.Unlock()
+	for _, proxy := range socks5Proxies {
+		if strings.TrimSpace(proxy.Addr) != addr {
+			continue
+		}
+		if client := socks5BoundClients[addr]; client != nil {
+			return client
+		}
+		if socks5BoundClients == nil {
+			socks5BoundClients = map[string]*http.Client{}
+		}
+		client := buildProxyClient(proxy)
+		socks5BoundClients[addr] = client
+		return client
+	}
+	return nil
 }
 
 // getHTTPClientForTier 按认证层级选择 HTTP 客户端。

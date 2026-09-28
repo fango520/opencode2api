@@ -1271,6 +1271,11 @@ textarea.form-control {
           </table>
         </div>
         <div style="margin-bottom:12px">
+          <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-ter);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">批量导入 SOCKS5（每行一个严格 URI）</label>
+          <textarea id="socks5Batch" rows="4" class="form-control" placeholder="socks5://host:port&#10;socks5://username:password@host:port&#10;# 空行和 # 注释行会忽略"></textarea>
+          <p style="font-size:12px;color:var(--text-ter);line-height:1.5;margin-top:6px">只接受 <code>socks5://[用户名:密码@]Host:Port</code> 格式；任一行格式错误将拒绝本次导入。</p>
+        </div>
+        <div style="margin-bottom:12px">
           <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-ter);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">当前生效路由</label>
           <select id="activeSocks5" class="form-control form-select"></select>
         </div>
@@ -1295,6 +1300,7 @@ textarea.form-control {
           </label>
         </div>
         <div class="card-actions">
+          <button class="btn btn-secondary" onclick="addSocks5Batch()">解析并批量导入</button>
           <button class="btn btn-secondary" onclick="addSocks5Row()">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             <span>添加代理节点</span>
@@ -1412,6 +1418,7 @@ textarea.form-control {
               <th style="width:8%">ID</th>
               <th style="width:24%">KEY（显示 / 复制）</th>
               <th style="width:10%">分组</th>
+              <th style="width:16%">专属 SOCKS5</th>
               <th style="width:8%">权重</th>
               <th style="width:18%">备注</th>
               <th style="width:14%">状态</th>
@@ -1898,6 +1905,36 @@ function addSocks5Row() {
   renderSocks5Table();
 }
 
+async function addSocks5Batch() {
+  const ta = document.getElementById('socks5Batch');
+  const text = ta.value || '';
+  try {
+    const r = await fetch('/api/socks5_parse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || '格式错误');
+    const existing = new Set(socks5Data.map(p => (p.addr || '') + '\u0000' + (p.username || '')));
+    let added = 0;
+    (d.proxies || []).forEach(function(p) {
+      const key = (p.addr || '') + '\u0000' + (p.username || '');
+      if (!existing.has(key)) {
+        socks5Data.push(p);
+        existing.add(key);
+        added++;
+      }
+    });
+    ta.value = '';
+    renderSocks5Table();
+    renderKeypoolTable();
+    showToast('已导入 ' + added + ' 个 SOCKS5 节点', 'success');
+  } catch (e) {
+    showToast('导入失败: ' + e.message, 'error');
+  }
+}
+
 function delSocks5(i) {
   socks5Data.splice(i, 1);
   renderSocks5Table();
@@ -2278,7 +2315,7 @@ function renderKeypoolTable() {
   if (!tb) return;
   const keys = keypoolKeys();
   if (!keys.length) {
-    tb.innerHTML = '<tr><td colspan="8" class="empty-state">暂无 Key，点击上方添加或批量粘贴</td></tr>';
+    tb.innerHTML = '<tr><td colspan="9" class="empty-state">暂无 Key，点击上方添加或批量粘贴</td></tr>';
     return;
   }
   tb.innerHTML = keys.map(function(k, i) {
@@ -2299,6 +2336,12 @@ function renderKeypoolTable() {
     h += '<option value=""' + (!k.group ? ' selected' : '') + '>全部</option>';
     h += '<option value="zen"' + (k.group === 'zen' ? ' selected' : '') + '>zen</option>';
     h += '<option value="go"' + (k.group === 'go' ? ' selected' : '') + '>go</option>';
+    h += '</select></td>';
+    h += '<td><select class="form-control form-select" onchange="onKeypoolField(' + i + ", 'socks5_proxy', this.value)" + '">';
+    h += '<option value="">跟随全局路由</option>';
+    socks5Data.forEach(function(p) {
+      if (p.addr) h += '<option value="' + esc(p.addr) + '"' + (k.socks5_proxy === p.addr ? ' selected' : '') + '>' + esc(p.name ? p.name + ' (' + p.addr + ')' : p.addr) + '</option>';
+    });
     h += '</select></td>';
     h += '<td><input type="number" class="form-control" min="1" style="max-width:80px" value="' + (k.weight || 1) + '" oninput="onKeypoolWeight(' + i + ', this.value)"></td>';
     h += '<td><input type="text" class="form-control" value="' + esc(k.note || '') + '" placeholder="备注" oninput="onKeypoolField(' + i + ", 'note', this.value)" + '"></td>';
@@ -2339,7 +2382,8 @@ function collectKeypool() {
       group: (k.group || '').toLowerCase().trim(),
       weight: parseInt(k.weight) >= 1 ? parseInt(k.weight) : 1,
       enabled: k.enabled !== false,
-      note: (k.note || '').trim()
+      note: (k.note || '').trim(),
+      socks5_proxy: (k.socks5_proxy || '').trim()
     };
   }).filter(k => k.key !== '');
   keypoolData.keys = keys;
@@ -2369,7 +2413,7 @@ function addKeypoolRow() {
   if (group !== 'zen' && group !== 'go') group = '';
   let weight = parseInt(weightEl.value) || 1;
   if (weight < 1) weight = 1;
-  keypoolKeys().push({ key: key, note: (noteEl.value || '').trim(), group: group, weight: weight, enabled: true });
+  keypoolKeys().push({ key: key, note: (noteEl.value || '').trim(), group: group, weight: weight, enabled: true, socks5_proxy: '' });
   keyEl.value = '';
   noteEl.value = '';
   weightEl.value = '1';

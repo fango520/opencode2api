@@ -171,6 +171,7 @@ func buildMux() *http.ServeMux {
 		mux.HandleFunc("/api/key_parse", logging.Middleware(requireAuth(keyPoolParseHandler)))
 		mux.HandleFunc("/api/key_status", logging.Middleware(requireAuth(keyPoolStatusHandler)))
 		mux.HandleFunc("/api/key_test", logging.Middleware(requireAuth(adminKeyTestHandler)))
+		mux.HandleFunc("/api/socks5_parse", logging.Middleware(requireAuth(adminSocks5ParseHandler)))
 		mux.HandleFunc("/api/logs", logging.Middleware(requireAuth(adminLogsHandler)))
 		mux.HandleFunc("/api/reload", logging.Middleware(requireAuth(reloadHandler)))
 		mux.HandleFunc("/", logging.Middleware(func(w http.ResponseWriter, r *http.Request) {

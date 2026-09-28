@@ -204,12 +204,13 @@ type Socks5Proxy struct {
 // accepts a plain string as the key value ("sk-..." ≡ {"key":"sk-..."}
 // with weight 1 and enabled by default).
 type UpstreamKey struct {
-	ID      string `json:"id,omitempty"`
-	Key     string `json:"key"`
-	Group   string `json:"group,omitempty"`
-	Weight  int    `json:"weight,omitempty"`
-	Enabled *bool  `json:"enabled,omitempty"`
-	Note    string `json:"note,omitempty"`
+	ID          string `json:"id,omitempty"`
+	Key         string `json:"key"`
+	Group       string `json:"group,omitempty"`
+	Weight      int    `json:"weight,omitempty"`
+	Enabled     *bool  `json:"enabled,omitempty"`
+	Note        string `json:"note,omitempty"`
+	Socks5Proxy string `json:"socks5_proxy,omitempty"`
 }
 
 // IsEnabled reports whether the entry participates in selection.
@@ -250,20 +251,22 @@ func (k UpstreamKey) MarshalJSON() ([]byte, error) {
 		enabled = *k.Enabled
 	}
 	type out struct {
-		ID      string `json:"id,omitempty"`
-		Key     string `json:"key"`
-		Group   string `json:"group,omitempty"`
-		Weight  int    `json:"weight,omitempty"`
-		Enabled bool   `json:"enabled"`
-		Note    string `json:"note,omitempty"`
+		ID          string `json:"id,omitempty"`
+		Key         string `json:"key"`
+		Group       string `json:"group,omitempty"`
+		Weight      int    `json:"weight,omitempty"`
+		Enabled     bool   `json:"enabled"`
+		Note        string `json:"note,omitempty"`
+		Socks5Proxy string `json:"socks5_proxy,omitempty"`
 	}
 	return json.Marshal(out{
-		ID:      k.ID,
-		Key:     k.Key,
-		Group:   k.Group,
-		Weight:  k.Weight,
-		Enabled: enabled,
-		Note:    k.Note,
+		ID:          k.ID,
+		Key:         k.Key,
+		Group:       k.Group,
+		Weight:      k.Weight,
+		Enabled:     enabled,
+		Note:        k.Note,
+		Socks5Proxy: strings.TrimSpace(k.Socks5Proxy),
 	})
 }
 
@@ -273,6 +276,7 @@ func (k UpstreamKey) Normalized() UpstreamKey {
 		k.Weight = 1
 	}
 	k.Group = strings.ToLower(strings.TrimSpace(k.Group))
+	k.Socks5Proxy = strings.TrimSpace(k.Socks5Proxy)
 	return k
 }
 
