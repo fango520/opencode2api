@@ -207,6 +207,8 @@ func applyConfig(cfg AppConfig) {
 	if cfg.Socks5Proxies != nil {
 		socks5Proxies = cfg.Socks5Proxies
 		socks5BoundClients = map[string]*http.Client{}
+		socks5Client = nil
+		socks5ClientAddr = ""
 	}
 	if activeSocks5 != cfg.ActiveSocks5 {
 		activeSocks5 = cfg.ActiveSocks5
