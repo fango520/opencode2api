@@ -1612,6 +1612,38 @@ textarea.form-control {
 </div>
 
 <!-- Reset Confirm Modal -->
+<div class="modal-backdrop" id="keyTestModal">
+  <div class="modal-card" style="max-width:620px">
+    <div class="modal-head">
+      <svg class="modal-icon-danger" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M2 12h20"></path></svg>
+      <span class="modal-title">测试上游 Key</span>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="keyTestIndex">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div>
+          <label style="display:block;font-size:12px;color:var(--text-ter);margin-bottom:5px">出口端点</label>
+          <select id="keyTestGroup" class="form-control form-select">
+            <option value="zen">ZEN / 免费端点</option>
+            <option value="go">GO / 付费端点</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;color:var(--text-ter);margin-bottom:5px">模型</label>
+          <input id="keyTestModel" class="form-control" value="mimo-v2.5-free" placeholder="例如 mimo-v2.5-free">
+        </div>
+      </div>
+      <label style="display:block;font-size:12px;color:var(--text-ter);margin-bottom:5px">测试消息</label>
+      <input id="keyTestMessage" class="form-control" value="hi" maxlength="4000">
+      <div id="keyTestResult" style="margin-top:12px;display:none;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;max-height:280px;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeKeyTest()">关闭</button>
+      <button class="btn btn-primary" id="keyTestRunBtn" onclick="runKeyTest()">开始测试</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="resetModal">
   <div class="modal-card">
     <div class="modal-head">
@@ -2272,6 +2304,7 @@ function renderKeypoolTable() {
     h += '<td><input type="text" class="form-control" value="' + esc(k.note || '') + '" placeholder="备注" oninput="onKeypoolField(' + i + ", 'note', this.value)" + '"></td>';
     h += '<td style="font-size:12px;color:var(--text-sec)">' + esc(statusText) + '</td>';
     h += '<td style="text-align:center;white-space:nowrap">';
+    h += '<button type="button" class="btn btn-secondary btn-icon" onclick="openKeyTest(' + i + ')" title="测试此 Key">🧪</button> ';
     h += '<button type="button" class="btn btn-secondary btn-icon" onclick="toggleKeypool(' + i + ')" title="启用/禁用">⏻</button> ';
     h += '<button type="button" class="btn btn-rose btn-icon" onclick="delKeypool(' + i + ')" title="删除"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>';
     h += '</td></tr>';
@@ -2378,6 +2411,59 @@ function toggleKeypool(i) {
   if (!k) return;
   k.enabled = !(k.enabled !== false);
   renderKeypoolTable();
+}
+
+function openKeyTest(i) {
+  const k = keypoolKeys()[i];
+  if (!k) return;
+  document.getElementById('keyTestIndex').value = String(i);
+  const group = (k.group === 'go' || k.group === 'zen') ? k.group : 'zen';
+  document.getElementById('keyTestGroup').value = group;
+  document.getElementById('keyTestModel').value = group === 'go' ? 'mimo-v2.5' : 'mimo-v2.5-free';
+  document.getElementById('keyTestMessage').value = 'hi';
+  const result = document.getElementById('keyTestResult');
+  result.style.display = 'none';
+  result.textContent = '';
+  document.getElementById('keyTestModal').classList.add('active');
+}
+
+function closeKeyTest() {
+  document.getElementById('keyTestModal').classList.remove('active');
+}
+
+async function runKeyTest() {
+  const i = parseInt(document.getElementById('keyTestIndex').value);
+  const k = keypoolKeys()[i];
+  if (!k || !k.id) return showToast('请先保存该 Key 以生成 ID', 'error');
+  const btn = document.getElementById('keyTestRunBtn');
+  const result = document.getElementById('keyTestResult');
+  const group = document.getElementById('keyTestGroup').value;
+  const model = document.getElementById('keyTestModel').value.trim();
+  const message = document.getElementById('keyTestMessage').value.trim();
+  btn.disabled = true;
+  btn.textContent = '测试中...';
+  result.style.display = 'block';
+  result.style.color = 'var(--text-sec)';
+  result.textContent = '正在请求 ' + group.toUpperCase() + ' 端点...';
+  try {
+    const r = await fetch('/api/key_test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: k.id, group, model, message })
+    });
+    const d = await r.json();
+    const ok = !!d.ok;
+    result.style.color = ok ? 'var(--emerald)' : 'var(--rose)';
+    result.textContent = (ok ? '✅ 测试成功\n' : '❌ 测试失败\n') + JSON.stringify(d, null, 2);
+    showToast(ok ? 'Key 测试成功' : 'Key 测试失败', ok ? 'success' : 'error');
+  } catch (e) {
+    result.style.color = 'var(--rose)';
+    result.textContent = '❌ 请求失败\n' + e.message;
+    showToast('Key 测试请求失败', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '开始测试';
+  }
 }
 
 function addPresetProtocolRule(pattern, protocol) {
