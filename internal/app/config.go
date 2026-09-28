@@ -21,14 +21,20 @@ type compiledKeywordRule struct {
 }
 
 var (
-	port              string
-	configPath        = "config.json"
-	modelAliasRules   = []domain.ModelKeywordRule{}
-	compiledRules     = []compiledKeywordRule{}
-	debugMode         bool
-	configMu          sync.RWMutex
-	storedResponses   = map[string]StoredResponseState{}
-	storedResponsesMu sync.RWMutex
+	port                string
+	configPath          = "config.json"
+	modelAliasRules     = []domain.ModelKeywordRule{}
+	compiledRules       = []compiledKeywordRule{}
+	debugMode           bool
+	configMu            sync.RWMutex
+	storedResponses     = map[string]StoredResponseState{}
+	storedResponsesMu   sync.RWMutex
+	routeMu             sync.RWMutex
+	gatewayAPIKey       string
+	gatewayAuthRequired bool
+	gatewayAllowPublic  bool
+	modelRoutes         = map[string]string{}
+	defaultRoute        = "zen"
 )
 
 // ======================== 配置管理 ========================
@@ -218,6 +224,7 @@ func applyConfig(cfg AppConfig) {
 	socks5Mu.Unlock()
 
 	setUpstreamBaseURLs(cfg.UpstreamBaseURLs)
+	setGatewayRouting(cfg.GatewayAPIKey, cfg.GatewayAuthRequired, cfg.GatewayAllowPublic, cfg.ModelRoutes, cfg.DefaultRoute)
 
 	if cfg.NativeResponsesModels != nil {
 		setNativeResponsesModels(cfg.NativeResponsesModels)
@@ -235,6 +242,61 @@ func applyConfig(cfg AppConfig) {
 	if cfg.KeyPool.Keys != nil {
 		setKeyPool(cfg.KeyPool)
 	}
+}
+
+func setGatewayRouting(apiKey string, required, allowPublic bool, routes map[string]string, fallback string) {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+	gatewayAPIKey = strings.TrimSpace(apiKey)
+	gatewayAuthRequired = required
+	gatewayAllowPublic = allowPublic
+	modelRoutes = make(map[string]string, len(routes))
+	for model, route := range routes {
+		model = strings.ToLower(strings.TrimSpace(model))
+		route = strings.ToLower(strings.TrimSpace(route))
+		if model == "" || (route != "zen" && route != "go" && route != "auto") {
+			continue
+		}
+		modelRoutes[model] = route
+	}
+	fallback = strings.ToLower(strings.TrimSpace(fallback))
+	if fallback != "zen" && fallback != "go" && fallback != "auto" {
+		fallback = "zen"
+	}
+	defaultRoute = fallback
+}
+
+func gatewayRoutingSnapshot() (string, bool, bool, map[string]string, string) {
+	routeMu.RLock()
+	defer routeMu.RUnlock()
+	routes := make(map[string]string, len(modelRoutes))
+	for k, v := range modelRoutes {
+		routes[k] = v
+	}
+	return gatewayAPIKey, gatewayAuthRequired, gatewayAllowPublic, routes, defaultRoute
+}
+
+func gatewayAuthEnabled() bool {
+	routeMu.RLock()
+	defer routeMu.RUnlock()
+	return gatewayAuthRequired && gatewayAPIKey != ""
+}
+
+func configuredModelRoute(modelID string) string {
+	base, _ := stripContextSuffix(modelID)
+	routeMu.RLock()
+	route := modelRoutes[strings.ToLower(strings.TrimSpace(base))]
+	if route == "" {
+		route = defaultRoute
+	}
+	routeMu.RUnlock()
+	if route == "auto" {
+		if isGoCatalogOnlyModel(base) {
+			return "go"
+		}
+		return "zen"
+	}
+	return route
 }
 
 // stripContextSuffix splits a model ID into its base and context suffix.
@@ -276,6 +338,12 @@ func resolveModelForAuth(auth UpstreamAuth, model string) string {
 		exactModelAvailable = isModelInGoCatalog(base)
 	case AuthRouteZen:
 		exactModelAvailable = isModelInZenCatalog(base)
+	case AuthRouteGateway:
+		if configuredModelRoute(base) == "go" {
+			exactModelAvailable = isModelInGoCatalog(base)
+		} else {
+			exactModelAvailable = isModelInZenCatalog(base)
+		}
 	}
 	if base != "" && exactModelAvailable {
 		if target, matched := matchKeywordRule(base); matched {

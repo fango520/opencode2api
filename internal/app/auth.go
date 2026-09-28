@@ -122,6 +122,9 @@ const (
 	// AuthRouteAdmin 匹配 adminPassword（panel 密码兼作 API key）。提取时
 	// 命中即不再比对真实 sk-，池 selectPoolKey 强制接管（design-keypool §2）。
 	AuthRouteAdmin
+	// AuthRouteGateway is authenticated by GatewayAPIKey. Its Token remains
+	// empty because an upstream credential must be selected from KeyPool.
+	AuthRouteGateway
 )
 
 type UpstreamAuth struct {
@@ -143,6 +146,10 @@ func extractUpstreamAuth(r *http.Request) UpstreamAuth {
 			token = key
 			source = "x-api-key"
 		}
+	}
+	apiKey, required, _, _, _ := gatewayRoutingSnapshot()
+	if required && apiKey != "" && subtle.ConstantTimeCompare([]byte(token), []byte(apiKey)) == 1 {
+		return UpstreamAuth{Mode: AuthRouteGateway, Source: source}
 	}
 	if token == "" || token == "public" {
 		src := source
@@ -202,7 +209,7 @@ func (auth UpstreamAuth) apiKey() string {
 }
 
 func (auth UpstreamAuth) shouldUseGoCatalog() bool {
-	return auth.Mode == AuthRouteGo
+	return auth.Mode == AuthRouteGo || auth.Mode == AuthRouteGateway
 }
 
 func (auth UpstreamAuth) shouldUseGoEndpoint(modelID string) bool {
@@ -211,6 +218,8 @@ func (auth UpstreamAuth) shouldUseGoEndpoint(modelID string) bool {
 		return isModelInGoCatalog(modelID)
 	case AuthRouteAuto:
 		return isGoCatalogOnlyModel(modelID)
+	case AuthRouteGateway:
+		return configuredModelRoute(modelID) == "go"
 	default:
 		return false
 	}

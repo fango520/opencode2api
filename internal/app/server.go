@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/subtle"
 	"flag"
 	"fmt"
 	"github.com/6Kmfi6HP/opencode2api/internal/logging"
@@ -119,15 +120,43 @@ func sessionContextMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// gatewayAuthMiddleware separates the client-facing gateway credential from
+// real upstream credentials. When enabled, anonymous/public and legacy
+// zen:/go: credentials are rejected unless GatewayAllowPublic is enabled.
+func gatewayAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !gatewayAuthEnabled() {
+			next(w, r)
+			return
+		}
+		token := ""
+		if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+			token = strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+		}
+		if token == "" {
+			token = strings.TrimSpace(r.Header.Get("x-api-key"))
+		}
+		apiKey, _, allowPublic, _, _ := gatewayRoutingSnapshot()
+		if subtle.ConstantTimeCompare([]byte(token), []byte(apiKey)) == 1 ||
+			(allowPublic && (token == "" || token == "public")) {
+			next(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"invalid gateway api key","type":"authentication_error"}}`))
+	}
+}
+
 // buildMux constructs the HTTP mux with all route registrations.
 func buildMux() *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/chat/completions", sessionContextMiddleware(logging.Middleware(chatCompletionsHandler)))
-	mux.HandleFunc("/v1/responses", sessionContextMiddleware(logging.Middleware(responsesHandler)))
-	mux.HandleFunc("/v1/messages", sessionContextMiddleware(logging.Middleware(claudeMessagesHandler)))
-	mux.HandleFunc("/v1/messages/count_tokens", sessionContextMiddleware(logging.Middleware(claudeCountTokensHandler)))
-	mux.HandleFunc("/v1/systemone", sessionContextMiddleware(logging.Middleware(systemoneHandler)))
-	mux.HandleFunc("/v1/models", sessionContextMiddleware(logging.Middleware(listModelsHandler)))
+	mux.HandleFunc("/v1/chat/completions", gatewayAuthMiddleware(sessionContextMiddleware(logging.Middleware(chatCompletionsHandler))))
+	mux.HandleFunc("/v1/responses", gatewayAuthMiddleware(sessionContextMiddleware(logging.Middleware(responsesHandler))))
+	mux.HandleFunc("/v1/messages", gatewayAuthMiddleware(sessionContextMiddleware(logging.Middleware(claudeMessagesHandler))))
+	mux.HandleFunc("/v1/messages/count_tokens", gatewayAuthMiddleware(sessionContextMiddleware(logging.Middleware(claudeCountTokensHandler))))
+	mux.HandleFunc("/v1/systemone", gatewayAuthMiddleware(sessionContextMiddleware(logging.Middleware(systemoneHandler))))
+	mux.HandleFunc("/v1/models", gatewayAuthMiddleware(sessionContextMiddleware(logging.Middleware(listModelsHandler))))
 	mux.HandleFunc("/health", logging.Middleware(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))

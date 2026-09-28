@@ -176,6 +176,13 @@ type AppConfig struct {
 	ProtocolRules []ProtocolRule `json:"protocol_rules,omitempty"`
 	// KeyPool configures rotation across multiple upstream API keys.
 	KeyPool KeyPool `json:"key_pool,omitempty"`
+	// GatewayAPIKey is the client-facing credential. It is separate from the
+	// real upstream credentials stored in KeyPool.Keys.
+	GatewayAPIKey       string            `json:"gateway_api_key,omitempty"`
+	GatewayAuthRequired bool              `json:"gateway_auth_required,omitempty"`
+	GatewayAllowPublic  bool              `json:"gateway_allow_public,omitempty"`
+	ModelRoutes         map[string]string `json:"model_routes,omitempty"`
+	DefaultRoute        string            `json:"default_route,omitempty"`
 	// StreamEmptyRetryMax：claude→responses 流式链路在「上游 200 后首个
 	// 有效产出前」遇到空流 EOF / 首字节超时时的重试次数上限（0=关闭，
 	// 缺省 1）。重试经 key pool 自动切到下一个可用 key。

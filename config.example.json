@@ -17,7 +17,16 @@
   "protocol_rules": [],
   "_comment_password": "Admin panel password. Empty disables /api/* auth AND disables the admin-as-API-key (Bearer) route.",
   "admin_password": "",
-  "_comment_key_pool": "Optional upstream key pool used when Authorization Bearer matches admin_password OR is a real opencode key (sk-/oc_sk-). Strategy: round_robin | weighted | sticky (default). Plain strings in keys[] are shorthand for {\"key\": ...}.",
+  "_comment_gateway": "Client-facing fixed request key. It is separate from the real upstream keys in key_pool.",
+  "gateway_api_key": "oc2api-change-this-request-key",
+  "gateway_auth_required": true,
+  "gateway_allow_public": false,
+  "default_route": "zen",
+  "model_routes": {
+    "mimo-v2.5": "go",
+    "mimo-v2.5-free": "zen"
+  },
+  "_comment_key_pool": "Real upstream keys selected after gateway authentication. Group each key as zen or go. Strategy: round_robin | weighted | sticky (default). Plain strings in keys[] are shorthand for {\"key\": ...}.",
   "key_pool": {
     "enabled": false,
     "strategy": "sticky",

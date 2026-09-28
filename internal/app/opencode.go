@@ -622,6 +622,9 @@ func callOpenCodeEndpoint(ctx context.Context, endpointSubpath string, upstreamB
 			ocSession = newOCSessionID()
 		}
 		attemptAuth, keyID, pooled := selectPoolKey(auth, modelID, attempt)
+		if auth.Mode == AuthRouteGateway && !pooled {
+			return nil, http.StatusServiceUnavailable, nil, fmt.Errorf("gateway key pool has no eligible upstream key")
+		}
 		targetAuth := auth
 		if pooled {
 			targetAuth = attemptAuth

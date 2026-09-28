@@ -8,6 +8,7 @@ import (
 	"github.com/6Kmfi6HP/opencode2api/internal/stats"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"golang.org/x/sync/singleflight"
 )
@@ -103,6 +104,7 @@ func adminConfigHandler(w http.ResponseWriter, r *http.Request) {
 		keypoolMu.RLock()
 		keyPoolRT := keypoolCfg
 		keypoolMu.RUnlock()
+		gatewayKey, gatewayRequired, gatewayAllowPublic, routes, fallback := gatewayRoutingSnapshot()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"model_alias":               cfg.ModelAlias,
@@ -121,6 +123,11 @@ func adminConfigHandler(w http.ResponseWriter, r *http.Request) {
 			"protocol_rules":            getProtocolRules(),
 			"key_pool":                  keyPoolRT,
 			"key_pool_status":           keyPoolStatus(),
+			"gateway_api_key":           gatewayKey,
+			"gateway_auth_required":     gatewayRequired,
+			"gateway_allow_public":      gatewayAllowPublic,
+			"model_routes":              routes,
+			"default_route":             fallback,
 			"log_level":                 logging.LevelString(),
 			"log_bodies":                logging.BodiesEnabled(),
 		})
@@ -150,6 +157,20 @@ func adminConfigHandler(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusBadRequest)
 				json.NewEncoder(w).Encode(map[string]string{"error": "invalid key_pool: " + err.Error()})
+				return
+			}
+		}
+		if payload.DefaultRoute != "" && payload.DefaultRoute != "zen" && payload.DefaultRoute != "go" && payload.DefaultRoute != "auto" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "invalid default_route"})
+			return
+		}
+		for model, route := range payload.ModelRoutes {
+			if strings.TrimSpace(model) == "" || (route != "zen" && route != "go" && route != "auto") {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "invalid model_routes"})
 				return
 			}
 		}
