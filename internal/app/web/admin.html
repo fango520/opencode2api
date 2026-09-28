@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh" data-theme="dark">
 <head>
 <meta charset="UTF-8">
@@ -2424,11 +2424,11 @@ function openKeyTest(i) {
   const result = document.getElementById('keyTestResult');
   result.style.display = 'none';
   result.textContent = '';
-  document.getElementById('keyTestModal').classList.add('active');
+  document.getElementById('keyTestModal').classList.add('show');
 }
 
 function closeKeyTest() {
-  document.getElementById('keyTestModal').classList.remove('active');
+  document.getElementById('keyTestModal').classList.remove('show');
 }
 
 async function runKeyTest() {
@@ -2812,3 +2812,4 @@ document.addEventListener('visibilitychange', function() {
 </script>
 </body>
 </html>
+
