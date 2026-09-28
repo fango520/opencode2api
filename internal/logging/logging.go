@@ -33,7 +33,9 @@ var (
 	levelVar      = &slog.LevelVar{}
 	bodiesMu      sync.RWMutex
 	bodiesEnabled bool
+	rotatorMu     sync.RWMutex
 	rotator       *lumberjack.Logger
+	logPath       string
 
 	upstreamErrDedupMu sync.Mutex
 	upstreamErrDedup   = map[string]upstreamErrDedupEntry{}
@@ -157,10 +159,33 @@ func redactLogAttr(_ []string, a slog.Attr) slog.Attr {
 
 // CloseRotator closes and clears the active log rotator, if any.
 func CloseRotator() {
+	rotatorMu.Lock()
+	defer rotatorMu.Unlock()
 	if rotator != nil {
 		_ = rotator.Close()
 		rotator = nil
 	}
+}
+
+// LogFilePath returns the active log file path. An empty path means logging
+// is stdout-only and there is no file to browse or clear.
+func LogFilePath() string {
+	rotatorMu.RLock()
+	defer rotatorMu.RUnlock()
+	return logPath
+}
+
+// ClearLog truncates the active log file without changing the logger. The
+// open lumberjack handle remains valid and subsequent records continue in the
+// same file.
+func ClearLog() error {
+	rotatorMu.RLock()
+	path := logPath
+	rotatorMu.RUnlock()
+	if path == "" {
+		return os.ErrNotExist
+	}
+	return os.Truncate(path, 0)
 }
 
 // Init configures the default logger and returns it. path is the already
@@ -200,6 +225,9 @@ func Init(path, level string, bodies bool) *slog.Logger {
 			resolvedPath = absPath
 		}
 	}
+	rotatorMu.Lock()
+	logPath = resolvedPath
+	rotatorMu.Unlock()
 
 	if len(writers) == 0 {
 		writers = append(writers, os.Stdout)
