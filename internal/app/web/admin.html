@@ -1270,10 +1270,8 @@ textarea.form-control {
             <tbody></tbody>
           </table>
         </div>
-        <div style="margin-bottom:12px">
-          <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-ter);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">批量导入 SOCKS5（每行一个严格 URI）</label>
-          <textarea id="socks5Batch" rows="4" class="form-control" placeholder="socks5://host:port&#10;socks5://username:password@host:port&#10;username:password@host:port&#10;# 空行和 # 注释行会忽略"></textarea>
-          <p style="font-size:12px;color:var(--text-ter);line-height:1.5;margin-top:6px">支持 <code>socks5://[用户名:密码@]Host:Port</code> 或 <code>用户名:密码@Host:Port</code>；复制内容中的 <code>\@</code> 也会自动识别。</p>
+        <div style="margin-bottom:12px;color:var(--text-ter);font-size:12px;line-height:1.5">
+          批量导入支持 <code>socks5://[用户名:密码@]Host:Port</code>、<code>用户名:密码@Host:Port</code>，复制内容中的 <code>\@</code> 也会自动识别。导入后先显示在上方列表，最后点击“保存全部配置”。
         </div>
         <div style="margin-bottom:12px">
           <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-ter);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">当前生效路由</label>
@@ -1300,7 +1298,7 @@ textarea.form-control {
           </label>
         </div>
         <div class="card-actions">
-          <button class="btn btn-secondary" onclick="addSocks5Batch()">解析并批量导入</button>
+          <button class="btn btn-secondary" onclick="openSocks5Import()">批量导入 SOCKS5</button>
           <button class="btn btn-secondary" onclick="addSocks5Row()">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             <span>添加代理节点</span>
@@ -1651,6 +1649,27 @@ textarea.form-control {
   </div>
 </div>
 
+<div class="modal-backdrop" id="socks5ImportModal">
+  <div class="modal-card" style="max-width:700px">
+    <div class="modal-head">
+      <svg class="modal-icon-danger" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M2 12h20"></path></svg>
+      <span class="modal-title">批量导入 SOCKS5 代理</span>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--text-ter);line-height:1.5;margin:0 0 10px">每行一个节点，支持以下格式：</p>
+      <pre style="font-size:12px;color:var(--text-sec);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;margin:0 0 10px;white-space:pre-wrap">socks5://host:port
+socks5://username:password@host:port
+username:password@host:port</pre>
+      <textarea id="socks5ImportText" rows="8" class="form-control" placeholder="将代理列表粘贴到这里，每行一个"></textarea>
+      <div id="socks5ImportResult" style="display:none;margin-top:10px;white-space:pre-wrap;word-break:break-word;font-size:12px;border-radius:8px;padding:10px"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeSocks5Import()">取消</button>
+      <button class="btn btn-primary" id="socks5ImportBtn" onclick="importSocks5Batch()">解析并加入列表</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="resetModal">
   <div class="modal-card">
     <div class="modal-head">
@@ -1905,9 +1924,36 @@ function addSocks5Row() {
   renderSocks5Table();
 }
 
-async function addSocks5Batch() {
-  const ta = document.getElementById('socks5Batch');
+function openSocks5Import() {
+  const ta = document.getElementById('socks5ImportText');
+  const result = document.getElementById('socks5ImportResult');
+  ta.value = '';
+  result.style.display = 'none';
+  result.textContent = '';
+  document.getElementById('socks5ImportModal').classList.add('show');
+  ta.focus();
+}
+
+function closeSocks5Import() {
+  document.getElementById('socks5ImportModal').classList.remove('show');
+}
+
+async function importSocks5Batch() {
+  const ta = document.getElementById('socks5ImportText');
+  const result = document.getElementById('socks5ImportResult');
+  const btn = document.getElementById('socks5ImportBtn');
   const text = ta.value || '';
+  if (!text.trim()) {
+    result.style.display = 'block';
+    result.style.color = 'var(--rose)';
+    result.textContent = '请先粘贴代理列表';
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = '解析中...';
+  result.style.display = 'block';
+  result.style.color = 'var(--text-sec)';
+  result.textContent = '正在解析代理列表...';
   try {
     const r = await fetch('/api/socks5_parse', {
       method: 'POST',
@@ -1929,9 +1975,17 @@ async function addSocks5Batch() {
     ta.value = '';
     renderSocks5Table();
     renderKeypoolTable();
-    showToast('已导入 ' + added + ' 个 SOCKS5 节点', 'success');
+    result.style.color = 'var(--emerald)';
+    result.textContent = '已加入列表 ' + added + ' 个节点。请关闭弹窗后点击“保存全部配置”使配置生效。';
+    showToast('已加入 ' + added + ' 个 SOCKS5 节点', 'success');
+    setTimeout(closeSocks5Import, 900);
   } catch (e) {
+    result.style.color = 'var(--rose)';
+    result.textContent = '导入失败：' + e.message;
     showToast('导入失败: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '解析并加入列表';
   }
 }
 
