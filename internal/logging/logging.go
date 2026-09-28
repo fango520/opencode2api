@@ -185,7 +185,20 @@ func ClearLog() error {
 	if path == "" {
 		return os.ErrNotExist
 	}
-	return os.Truncate(path, 0)
+	if err := os.Truncate(path, 0); err != nil {
+		return err
+	}
+	// Remove rotated siblings as part of an explicit admin clear operation.
+	// The active lumberjack handle remains open and will continue writing to the
+	// truncated primary file.
+	if matches, err := filepath.Glob(path + ".*"); err == nil {
+		for _, rotated := range matches {
+			if err := os.Remove(rotated); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Init configures the default logger and returns it. path is the already

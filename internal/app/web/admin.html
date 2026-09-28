@@ -2192,7 +2192,7 @@ async function loadLogs(page) {
 }
 
 async function clearLogs() {
-  if (!confirm('确认清空当前日志文件吗？轮换日志不会被删除。')) return;
+  if (!confirm('确认清空当前日志及轮换日志吗？此操作不可恢复。')) return;
   try {
     const r = await fetch('/api/logs', { method: 'DELETE' });
     if (!r.ok) throw new Error(await r.text());
