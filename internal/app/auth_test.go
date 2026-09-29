@@ -1,9 +1,61 @@
 package app
 
 import (
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 )
+
+func TestRequireAuthReturnsJSONForExpiredAdminAPI(t *testing.T) {
+	oldPassword := adminPassword
+	oldSessions := sessions
+	adminPassword = "test-panel-password"
+	sessions = map[string]struct{}{}
+	defer func() {
+		adminPassword = oldPassword
+		sessions = oldSessions
+	}()
+
+	handler := requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/logs", nil)
+	handler(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("API status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Fatalf("API content type = %q", got)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("API response is not JSON: %v", err)
+	}
+	if body["error"] == "" {
+		t.Fatal("API response should explain that the admin session expired")
+	}
+}
+
+func TestRequireAuthStillRedirectsAdminPage(t *testing.T) {
+	oldPassword := adminPassword
+	oldSessions := sessions
+	adminPassword = "test-panel-password"
+	sessions = map[string]struct{}{}
+	defer func() {
+		adminPassword = oldPassword
+		sessions = oldSessions
+	}()
+
+	handler := requireAuth(func(w http.ResponseWriter, r *http.Request) {})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	handler(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/login" {
+		t.Fatalf("page auth = status %d location %q, want redirect to /login", rec.Code, rec.Header().Get("Location"))
+	}
+}
 
 func TestIsValidOpenCodeKeyOcSk(t *testing.T) {
 	cases := []struct {

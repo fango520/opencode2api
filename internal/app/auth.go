@@ -29,6 +29,10 @@ func requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 		cookie, err := r.Cookie("session")
 		if err != nil || cookie.Value == "" {
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				writeAdminAuthRequired(w)
+				return
+			}
 			http.Redirect(w, r, "/login", http.StatusFound)
 			return
 		}
@@ -36,11 +40,21 @@ func requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		_, ok := sessions[cookie.Value]
 		sessionsMu.Unlock()
 		if !ok {
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				writeAdminAuthRequired(w)
+				return
+			}
 			http.Redirect(w, r, "/login", http.StatusFound)
 			return
 		}
 		next(w, r)
 	}
+}
+
+func writeAdminAuthRequired(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusUnauthorized)
+	_, _ = w.Write([]byte(`{"error":"admin session expired; please log in again"}`))
 }
 
 // adminAPIEnabled 报告管理 API（/login /logout /api/*）是否注册。
