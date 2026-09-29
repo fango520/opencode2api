@@ -1444,7 +1444,11 @@ textarea.form-control {
         <div class="glass-card col-6" style="margin-bottom:0">
           <div style="margin-bottom:14px">
             <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-ter);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">固定请求 Key</label>
-            <input type="password" id="gateway_api_key" class="form-control" autocomplete="new-password" placeholder="供外部工具访问本网关的固定 Key">
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="password" id="gateway_api_key" class="form-control" style="font-family:monospace" autocomplete="new-password" spellcheck="false" placeholder="供外部工具访问本网关的固定 Key">
+              <button type="button" class="btn btn-secondary btn-icon" onclick="toggleGatewayKeyReveal(this)" title="显示/隐藏固定请求 Key" aria-label="显示/隐藏固定请求 Key">◉</button>
+              <button type="button" class="btn btn-secondary btn-icon" onclick="copyGatewayKey()" title="复制固定请求 Key" aria-label="复制固定请求 Key">⧉</button>
+            </div>
             <p style="font-size:12px;color:var(--text-ter);line-height:1.5;margin-top:8px">此 Key 仅用于访问 opencode2api；真实 Zen/Go 上游 Key 仍在“API Keys”页维护。</p>
           </div>
           <div class="switch-wrapper" style="margin-top:0">
@@ -2354,6 +2358,38 @@ async function copyKeypool(i) {
     showToast('Key 已复制');
   } catch (e) {
     showToast('复制失败，请先点击显示后手动复制', 'error');
+  }
+}
+
+function toggleGatewayKeyReveal(btn) {
+  const input = document.getElementById('gateway_api_key');
+  if (!input) return;
+  input.type = input.type === 'password' ? 'text' : 'password';
+  if (btn) btn.textContent = input.type === 'text' ? '◉' : '◌';
+}
+
+async function copyGatewayKey() {
+  const input = document.getElementById('gateway_api_key');
+  const key = input ? input.value : '';
+  if (!key) return showToast('固定请求 Key 为空', 'error');
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(key);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = key;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const copied = document.execCommand('copy');
+      ta.remove();
+      if (!copied) throw new Error('clipboard unavailable');
+    }
+    showToast('固定请求 Key 已复制', 'success');
+  } catch (e) {
+    showToast('复制失败，请检查浏览器剪贴板权限', 'error');
   }
 }
 
