@@ -102,6 +102,9 @@ func validateKeyPool(p KeyPool) error {
 		if k.Weight < 1 {
 			return fmt.Errorf("keys[%d]: weight must be >= 1", i)
 		}
+		if k.ProxyPolicy != "" && k.ProxyPolicy != "fixed" && k.ProxyPolicy != "direct_then_pool" {
+			return fmt.Errorf("keys[%d]: proxy_policy must be fixed or direct_then_pool", i)
+		}
 		id := strings.TrimSpace(k.ID)
 		if id == "" {
 			continue
@@ -245,6 +248,7 @@ func selectPoolKey(auth UpstreamAuth, modelID string, attempt ...int) (UpstreamA
 	out := auth
 	out.Token = picked.Key
 	out.Socks5Proxy = strings.TrimSpace(picked.Socks5Proxy)
+	out.ProxyPolicy = picked.ProxyPolicy
 	return out, picked.ID, true
 }
 

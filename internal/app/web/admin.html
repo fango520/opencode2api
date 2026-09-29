@@ -372,6 +372,10 @@ header {
   grid-template-columns: repeat(12, 1fr);
   gap: 20px;
 }
+.keypool-settings-grid { display:grid; grid-template-columns:repeat(5,minmax(145px,1fr)); gap:14px; margin-top:16px; }
+@media (max-width:1100px) { .keypool-settings-grid { grid-template-columns:repeat(3,minmax(145px,1fr)); } }
+@media (max-width:700px) { .keypool-settings-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:460px) { .keypool-settings-grid { grid-template-columns:1fr; } }
 .col-12 { grid-column: span 12; }
 .col-8 { grid-column: span 8; }
 .col-7 { grid-column: span 7; }
@@ -1264,6 +1268,7 @@ textarea.form-control {
                 <th style="width:30%">地址 (Host:Port)</th>
                 <th style="width:20%">用户名</th>
                 <th style="width:20%">密码</th>
+                <th style="width:12%">状态</th>
                 <th style="width:5%;text-align:center">操作</th>
               </tr>
             </thead>
@@ -1342,7 +1347,7 @@ textarea.form-control {
           <span class="switch-track"></span>
         </label>
       </div>
-      <div class="bento-grid">
+      <div class="keypool-settings-grid">
         <div style="margin-bottom:14px">
           <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-ter);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">轮询策略</label>
           <select id="keypool_strategy" class="form-control form-select">
@@ -1417,6 +1422,7 @@ textarea.form-control {
               <th style="width:24%">KEY（显示 / 复制）</th>
               <th style="width:10%">分组</th>
               <th style="width:16%">专属 SOCKS5</th>
+              <th style="width:17%">代理策略</th>
               <th style="width:8%">权重</th>
               <th style="width:18%">备注</th>
               <th style="width:14%">状态</th>
@@ -1922,11 +1928,11 @@ function collectEfforts() {
 function renderSocks5Table() {
   const tb = document.querySelector('#socks5Table tbody');
   if (!socks5Data.length) {
-    tb.innerHTML = '<tr><td colspan="5" class="empty-state">暂无 SOCKS5 代理节点</td></tr>';
+    tb.innerHTML = '<tr><td colspan="6" class="empty-state">暂无 SOCKS5 代理节点</td></tr>';
     renderSocks5Select();
     return;
   }
-  tb.innerHTML = socks5Data.map((p, i) => '<tr><td><input class="form-control" value="' + esc(p.name || '') + '" data-field="name" placeholder="名称 (例如 clash)"></td><td><input class="form-control" value="' + esc(p.addr) + '" data-field="addr" placeholder="127.0.0.1:7890"></td><td><input class="form-control" value="' + esc(p.username || '') + '" data-field="username" placeholder="可选"></td><td><input class="form-control" value="' + esc(p.password || '') + '" data-field="password" type="password" placeholder="可选"></td><td style="text-align:center"><button class="btn btn-rose btn-icon" onclick="delSocks5(' + i + ')" title="删除"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button></td></tr>').join('');
+  tb.innerHTML = socks5Data.map((p, i) => '<tr data-index="' + i + '"><td><input class="form-control" value="' + esc(p.name || '') + '" data-field="name" placeholder="\u540d\u79f0"></td><td><input class="form-control" value="' + esc(p.addr) + '" data-field="addr" placeholder="127.0.0.1:7890"></td><td><input class="form-control" value="' + esc(p.username || '') + '" data-field="username" placeholder="\u53ef\u9009"></td><td><input class="form-control" value="' + esc(p.password || '') + '" data-field="password" type="password" placeholder="\u53ef\u9009"></td><td style="white-space:nowrap"><span style="color:' + (p.disabled ? 'var(--rose)' : 'var(--emerald)') + '">' + (p.disabled ? '429\u7981\u7528' : '\u53ef\u7528') + '</span> <button type="button" class="btn btn-secondary" onclick="toggleSocks5Enabled(' + i + ')">' + (p.disabled ? '\u542f\u7528' : '\u7981\u7528') + '</button></td><td style="text-align:center"><button class="btn btn-rose btn-icon" onclick="delSocks5(' + i + ')" title="\u5220\u9664">\u2715</button></td></tr>').join('');
   renderSocks5Select();
 }
 
@@ -1935,6 +1941,13 @@ function addSocks5Row() {
   if (tb.querySelector('.empty-state')) tb.innerHTML = '';
   socks5Data.push({ addr: '', name: '' });
   renderSocks5Table();
+}
+
+function toggleSocks5Enabled(i) {
+  if (!socks5Data[i]) return;
+  socks5Data[i].disabled = !socks5Data[i].disabled;
+  renderSocks5Table();
+  showToast('节点状态已更改，请保存全部配置');
 }
 
 function openSocks5Import() {
@@ -2016,7 +2029,8 @@ function collectSocks5() {
         addr: a.value.trim(),
         name: (tr.querySelector('[data-field="name"]') || {}).value?.trim() || '',
         username: (tr.querySelector('[data-field="username"]') || {}).value?.trim() || '',
-        password: (tr.querySelector('[data-field="password"]') || {}).value?.trim() || ''
+        password: (tr.querySelector('[data-field="password"]') || {}).value?.trim() || '',
+        disabled: !!(socks5Data[Number(tr.dataset.index)] && socks5Data[Number(tr.dataset.index)].disabled)
       });
     }
   });
@@ -2029,7 +2043,7 @@ function renderSocks5Select() {
   const cur = sel.value;
   sel.innerHTML = '<option value="">直连 (不使用 SOCKS5 代理)</option>';
   socks5Data.forEach(p => {
-    if (p.addr) {
+    if (p.addr && !p.disabled) {
       const label = p.name ? p.name + ' (' + p.addr + ')' : p.addr;
       const opt = document.createElement('option');
       opt.value = p.addr;
@@ -2416,7 +2430,7 @@ function renderKeypoolTable() {
   if (!tb) return;
   const keys = keypoolKeys();
   if (!keys.length) {
-    tb.innerHTML = '<tr><td colspan="9" class="empty-state">暂无 Key，点击上方添加或批量粘贴</td></tr>';
+    tb.innerHTML = '<tr><td colspan="10" class="empty-state">暂无 Key，点击上方添加或批量粘贴</td></tr>';
     return;
   }
   tb.innerHTML = keys.map(function(k, i) {
@@ -2441,8 +2455,12 @@ function renderKeypoolTable() {
     h += '<td><select class="form-control form-select" onchange="onKeypoolField(' + i + ", 'socks5_proxy', this.value)" + '">';
     h += '<option value="">跟随全局路由</option>';
     socks5Data.forEach(function(p) {
-      if (p.addr) h += '<option value="' + esc(p.addr) + '"' + (k.socks5_proxy === p.addr ? ' selected' : '') + '>' + esc(p.name ? p.name + ' (' + p.addr + ')' : p.addr) + '</option>';
+      if (p.addr && !p.disabled) h += '<option value="' + esc(p.addr) + '"' + (k.socks5_proxy === p.addr ? ' selected' : '') + '>' + esc(p.name ? p.name + ' (' + p.addr + ')' : p.addr) + '</option>';
     });
+    h += '</select></td>';
+    h += '<td><select class="form-control form-select" onchange="onKeypoolField(' + i + ", 'proxy_policy', this.value)" + '">';
+    h += '<option value="fixed"' + (k.proxy_policy !== 'direct_then_pool' ? ' selected' : '') + '>固定 / 全局</option>';
+    h += '<option value="direct_then_pool"' + (k.proxy_policy === 'direct_then_pool' ? ' selected' : '') + '>直连→429代理池</option>';
     h += '</select></td>';
     h += '<td><input type="number" class="form-control" min="1" style="max-width:80px" value="' + (k.weight || 1) + '" oninput="onKeypoolWeight(' + i + ', this.value)"></td>';
     h += '<td><input type="text" class="form-control" value="' + esc(k.note || '') + '" placeholder="备注" oninput="onKeypoolField(' + i + ", 'note', this.value)" + '"></td>';
@@ -2484,7 +2502,8 @@ function collectKeypool() {
       weight: parseInt(k.weight) >= 1 ? parseInt(k.weight) : 1,
       enabled: k.enabled !== false,
       note: (k.note || '').trim(),
-      socks5_proxy: (k.socks5_proxy || '').trim()
+      socks5_proxy: (k.socks5_proxy || '').trim(),
+      proxy_policy: k.proxy_policy === 'direct_then_pool' ? 'direct_then_pool' : 'fixed'
     };
   }).filter(k => k.key !== '');
   keypoolData.keys = keys;
@@ -2514,7 +2533,7 @@ function addKeypoolRow() {
   if (group !== 'zen' && group !== 'go') group = '';
   let weight = parseInt(weightEl.value) || 1;
   if (weight < 1) weight = 1;
-  keypoolKeys().push({ key: key, note: (noteEl.value || '').trim(), group: group, weight: weight, enabled: true, socks5_proxy: '' });
+  keypoolKeys().push({ key: key, note: (noteEl.value || '').trim(), group: group, weight: weight, enabled: true, socks5_proxy: '', proxy_policy: 'fixed' });
   keyEl.value = '';
   noteEl.value = '';
   weightEl.value = '1';

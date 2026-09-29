@@ -146,6 +146,7 @@ type UpstreamAuth struct {
 	Mode        AuthRouteMode
 	Source      string // authorization | x-api-key | none
 	Socks5Proxy string // optional per-upstream-key proxy address
+	ProxyPolicy string // fixed (default) or direct_then_pool
 }
 
 func extractUpstreamAuth(r *http.Request) UpstreamAuth {

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -354,7 +355,7 @@ func selectUpstreamTarget(auth UpstreamAuth, bodyMap map[string]any, upstreamHea
 
 	socks5Mu.RLock()
 	rr := activeSocks5 == socks5RR
-	proxies := socks5Proxies
+	proxies := availableSocks5ProxiesLocked("")
 	baseURLs := upstreamBaseURLs
 	socks5Mu.RUnlock()
 	if bound := strings.TrimSpace(auth.Socks5Proxy); bound != "" {
@@ -508,11 +509,12 @@ func getHTTPClient() *http.Client {
 	var useRR bool
 
 	if activeSocks5 == socks5RR {
-		if len(socks5Proxies) == 0 {
+		proxies := availableSocks5ProxiesLocked("")
+		if len(proxies) == 0 {
 			return httpClient
 		}
-		idx := atomic.AddUint32(&socks5RRIndex, 1) % uint32(len(socks5Proxies))
-		proxy = socks5Proxies[idx]
+		idx := atomic.AddUint32(&socks5RRIndex, 1) % uint32(len(proxies))
+		proxy = proxies[idx]
 		useRR = true
 	} else {
 		if socks5Client != nil && socks5ClientAddr == activeSocks5 {
@@ -521,7 +523,7 @@ func getHTTPClient() *http.Client {
 
 		var found bool
 		for i := range socks5Proxies {
-			if socks5Proxies[i].Addr == activeSocks5 {
+			if socks5Proxies[i].Addr == activeSocks5 && !socks5Proxies[i].Disabled {
 				proxy = socks5Proxies[i]
 				found = true
 				break
@@ -549,7 +551,7 @@ func getHTTPClientForProxy(addr string) *http.Client {
 	socks5Mu.Lock()
 	defer socks5Mu.Unlock()
 	for _, proxy := range socks5Proxies {
-		if strings.TrimSpace(proxy.Addr) != addr {
+		if strings.TrimSpace(proxy.Addr) != addr || proxy.Disabled {
 			continue
 		}
 		if client := socks5BoundClients[addr]; client != nil {
@@ -563,6 +565,135 @@ func getHTTPClientForProxy(addr string) *http.Client {
 		return client
 	}
 	return nil
+}
+
+// availableSocks5ProxiesLocked returns a snapshot excluding the optional
+// address and nodes quarantined after an upstream 429. Caller holds socks5Mu.
+func availableSocks5ProxiesLocked(exclude string) []Socks5Proxy {
+	proxies := make([]Socks5Proxy, 0, len(socks5Proxies))
+	for _, proxy := range socks5Proxies {
+		addr := strings.TrimSpace(proxy.Addr)
+		if addr == "" || proxy.Disabled || addr == strings.TrimSpace(exclude) {
+			continue
+		}
+		proxies = append(proxies, proxy)
+	}
+	return proxies
+}
+
+func socks5ProxyPoolSnapshot(exclude string) []Socks5Proxy {
+	socks5Mu.RLock()
+	defer socks5Mu.RUnlock()
+	return availableSocks5ProxiesLocked(exclude)
+}
+
+func egressLabel(proxyAddr string) string {
+	if strings.TrimSpace(proxyAddr) == "" {
+		return "direct"
+	}
+	return "socks5"
+}
+
+func quarantineSocks5Proxy(addr, keyID string) {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return
+	}
+	socks5Mu.Lock()
+	found := false
+	for i := range socks5Proxies {
+		if strings.TrimSpace(socks5Proxies[i].Addr) == addr {
+			socks5Proxies[i].Disabled = true
+			found = true
+		}
+	}
+	delete(socks5BoundClients, addr)
+	if socks5ClientAddr == addr {
+		socks5Client = nil
+		socks5ClientAddr = ""
+	}
+	stickyMu.Lock()
+	stickyEntries = map[string]*stickyProxyEntry{}
+	stickyMu.Unlock()
+	socks5Mu.Unlock()
+	if !found {
+		return
+	}
+	if err := persistProxyDisabled(addr, true); err != nil {
+		slog.Error("proxy quarantine persistence failed", "proxy", addr, "key_id", keyID, "error", err)
+	}
+	slog.Warn("socks5 proxy quarantined after upstream 429", "proxy", addr, "key_id", keyID)
+}
+
+func enableSocks5Proxy(addr string) {
+	addr = strings.TrimSpace(addr)
+	socks5Mu.Lock()
+	for i := range socks5Proxies {
+		if strings.TrimSpace(socks5Proxies[i].Addr) == addr {
+			socks5Proxies[i].Disabled = false
+		}
+	}
+	socks5Mu.Unlock()
+	if err := persistProxyDisabled(addr, false); err != nil {
+		slog.Error("proxy re-enable persistence failed", "proxy", addr, "error", err)
+	}
+}
+
+// doWithKeyProxyPolicy sends a direct_then_pool key directly first. A 429
+// retries the same request/key through each usable SOCKS5 node; proxy 429s
+// quarantine those nodes before trying the next one.
+func doWithKeyProxyPolicy(req *http.Request, keyID string) (*http.Response, *http.Client, string, error) {
+	directResp, err := httpClient.Do(req)
+	if err != nil || directResp == nil || directResp.StatusCode != http.StatusTooManyRequests {
+		return directResp, httpClient, "", err
+	}
+	directBody, _ := io.ReadAll(io.LimitReader(directResp.Body, 64*1024))
+	directResp.Body.Close()
+	original := &http.Response{
+		Status: directResp.Status, StatusCode: directResp.StatusCode,
+		Header: directResp.Header.Clone(), Body: io.NopCloser(bytes.NewReader(directBody)),
+		Proto: directResp.Proto, ProtoMajor: directResp.ProtoMajor, ProtoMinor: directResp.ProtoMinor,
+		Request: directResp.Request,
+	}
+	proxies := socks5ProxyPoolSnapshot("")
+	slog.Info("key egress fallback started", "key_id", keyID, "trigger_status", http.StatusTooManyRequests, "proxy_candidates", len(proxies))
+	var last429 *http.Response
+	var last429Client *http.Client
+	var last429Addr string
+	for _, proxy := range proxies {
+		clone := req.Clone(req.Context())
+		if req.GetBody == nil {
+			break
+		}
+		clone.Body, err = req.GetBody()
+		if err != nil {
+			break
+		}
+		client := getHTTPClientForProxy(proxy.Addr)
+		if client == nil {
+			continue
+		}
+		resp, proxyErr := client.Do(clone)
+		if proxyErr != nil {
+			slog.Warn("key proxy fallback transport error", "key_id", keyID, "proxy", proxy.Addr, "error", proxyErr)
+			continue
+		}
+		if resp.StatusCode == http.StatusTooManyRequests {
+			quarantineSocks5Proxy(proxy.Addr, keyID)
+			if last429 != nil && last429.Body != nil {
+				_ = last429.Body.Close()
+			}
+			slog.Info("key egress proxy attempt", "key_id", keyID, "egress", "socks5", "proxy_addr", proxy.Addr, "status", resp.StatusCode)
+			last429, last429Client, last429Addr = resp, client, proxy.Addr
+			continue
+		}
+		slog.Info("key egress proxy attempt", "key_id", keyID, "egress", "socks5", "proxy_addr", proxy.Addr, "status", resp.StatusCode)
+		return resp, client, proxy.Addr, nil
+	}
+	if last429 != nil {
+		return last429, last429Client, last429Addr, nil
+	}
+	return original, httpClient, "", nil
 }
 
 // getHTTPClientForTier 按认证层级选择 HTTP 客户端。

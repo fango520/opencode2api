@@ -80,7 +80,7 @@ func adminKeyTestHandler(w http.ResponseWriter, r *http.Request) {
 		mode = AuthRouteGo
 		useGo = true
 	}
-	auth := UpstreamAuth{Token: key.Key, Mode: mode, Source: "admin-key-test", Socks5Proxy: strings.TrimSpace(key.Socks5Proxy)}
+	auth := UpstreamAuth{Token: key.Key, Mode: mode, Source: "admin-key-test", Socks5Proxy: strings.TrimSpace(key.Socks5Proxy), ProxyPolicy: key.ProxyPolicy}
 	bodyMap := map[string]any{
 		"model": payload.Model,
 		"messages": []any{map[string]any{
@@ -90,7 +90,14 @@ func adminKeyTestHandler(w http.ResponseWriter, r *http.Request) {
 		"max_tokens": 64,
 	}
 	state := initOCSession()
-	baseURL, client := selectUpstreamTarget(auth, bodyMap, nil, normalizedTransportScope(state.sessionID))
+	var baseURL string
+	var client *http.Client
+	if auth.ProxyPolicy == "direct_then_pool" {
+		baseURL = selectBaseURLForRequest(auth, bodyMap, nil, normalizedTransportScope(state.sessionID))
+		client = httpClient
+	} else {
+		baseURL, client = selectUpstreamTarget(auth, bodyMap, nil, normalizedTransportScope(state.sessionID))
+	}
 	proxyNode := keyTestProxyNode(key)
 	req, err := buildOCRequestWithSubpathAndState(payload.Model, bodyMap, auth, useGo, baseURL, "chat/completions", state.sessionID, state)
 	if err != nil {
@@ -100,7 +107,18 @@ func adminKeyTestHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
 	started := time.Now()
-	resp, err := client.Do(req.WithContext(ctx))
+	var usedProxy string
+	var resp *http.Response
+	if auth.ProxyPolicy == "direct_then_pool" {
+		resp, client, usedProxy, err = doWithKeyProxyPolicy(req.WithContext(ctx), key.ID)
+		if usedProxy != "" {
+			proxyNode = keyTestProxyName(usedProxy)
+		} else {
+			proxyNode = "直连"
+		}
+	} else {
+		resp, err = client.Do(req.WithContext(ctx))
+	}
 	latency := time.Since(started).Milliseconds()
 	egressIP := detectEgressIP(ctx, client)
 	result := map[string]any{
@@ -132,6 +150,9 @@ func adminKeyTestHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func keyTestProxyNode(key UpstreamKey) string {
+	if key.ProxyPolicy == "direct_then_pool" {
+		return "直连；429 时自动代理轮换"
+	}
 	if addr := strings.TrimSpace(key.Socks5Proxy); addr != "" {
 		socks5Mu.RLock()
 		defer socks5Mu.RUnlock()
@@ -155,6 +176,19 @@ func keyTestProxyNode(key UpstreamKey) string {
 	default:
 		return "全局 " + activeSocks5
 	}
+}
+
+func keyTestProxyName(addr string) string {
+	socks5Mu.RLock()
+	defer socks5Mu.RUnlock()
+	for _, proxy := range socks5Proxies {
+		if strings.TrimSpace(proxy.Addr) == strings.TrimSpace(addr) {
+			if name := strings.TrimSpace(proxy.Name); name != "" {
+				return name + " (" + addr + ")"
+			}
+		}
+	}
+	return addr
 }
 
 func detectEgressIP(ctx context.Context, client *http.Client) string {

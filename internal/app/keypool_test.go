@@ -195,6 +195,28 @@ func TestKeyPool_StringShorthand(t *testing.T) {
 	}
 }
 
+func TestKeyPool_ProxyPolicyDefaultsAndSelects(t *testing.T) {
+	keypoolMu.RLock()
+	old := keypoolCfg
+	keypoolMu.RUnlock()
+	t.Cleanup(func() { setKeyPool(old) })
+	setKeyPool(KeyPool{Enabled: true, Strategy: "round_robin", Keys: []UpstreamKey{
+		{ID: "direct", Key: "key-direct"},
+		{ID: "fallback", Key: "key-fallback", ProxyPolicy: "direct_then_pool"},
+	}})
+	keypoolRRIndex.Store(1)
+	auth, _, ok := selectPoolKey(UpstreamAuth{Mode: AuthRouteGateway}, "model", 0)
+	if !ok || auth.ProxyPolicy != "direct_then_pool" {
+		t.Fatalf("selected auth policy = %q, ok=%v", auth.ProxyPolicy, ok)
+	}
+	keypoolMu.RLock()
+	entries := append([]UpstreamKey(nil), keypoolEntries...)
+	keypoolMu.RUnlock()
+	if entries[0].ProxyPolicy != "fixed" {
+		t.Fatalf("legacy key policy default = %q, want fixed", entries[0].ProxyPolicy)
+	}
+}
+
 func TestKeyPool_NormalizeDedup(t *testing.T) {
 	p := normalizeKeyPool(KeyPool{Keys: []UpstreamKey{
 		{Key: "ka"},

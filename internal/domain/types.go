@@ -198,6 +198,7 @@ type Socks5Proxy struct {
 	Username string `json:"username,omitempty"`
 	Password string `json:"password,omitempty"`
 	Name     string `json:"name,omitempty"`
+	Disabled bool   `json:"disabled,omitempty"`
 }
 
 // UpstreamKey is one pooled upstream credential. The compact JSON form
@@ -211,6 +212,7 @@ type UpstreamKey struct {
 	Enabled     *bool  `json:"enabled,omitempty"`
 	Note        string `json:"note,omitempty"`
 	Socks5Proxy string `json:"socks5_proxy,omitempty"`
+	ProxyPolicy string `json:"proxy_policy,omitempty"`
 }
 
 // IsEnabled reports whether the entry participates in selection.
@@ -258,6 +260,7 @@ func (k UpstreamKey) MarshalJSON() ([]byte, error) {
 		Enabled     bool   `json:"enabled"`
 		Note        string `json:"note,omitempty"`
 		Socks5Proxy string `json:"socks5_proxy,omitempty"`
+		ProxyPolicy string `json:"proxy_policy,omitempty"`
 	}
 	return json.Marshal(out{
 		ID:          k.ID,
@@ -267,6 +270,7 @@ func (k UpstreamKey) MarshalJSON() ([]byte, error) {
 		Enabled:     enabled,
 		Note:        k.Note,
 		Socks5Proxy: strings.TrimSpace(k.Socks5Proxy),
+		ProxyPolicy: normalizeKeyProxyPolicy(k.ProxyPolicy),
 	})
 }
 
@@ -277,7 +281,15 @@ func (k UpstreamKey) Normalized() UpstreamKey {
 	}
 	k.Group = strings.ToLower(strings.TrimSpace(k.Group))
 	k.Socks5Proxy = strings.TrimSpace(k.Socks5Proxy)
+	k.ProxyPolicy = normalizeKeyProxyPolicy(k.ProxyPolicy)
 	return k
+}
+
+func normalizeKeyProxyPolicy(policy string) string {
+	if strings.EqualFold(strings.TrimSpace(policy), "direct_then_pool") {
+		return "direct_then_pool"
+	}
+	return "fixed"
 }
 
 // KeyPool mirrors the config.json "key_pool" section. Strategy is

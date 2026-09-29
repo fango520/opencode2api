@@ -630,7 +630,14 @@ func callOpenCodeEndpoint(ctx context.Context, endpointSubpath string, upstreamB
 			targetAuth = attemptAuth
 		}
 		upstreamHeaders := upstreamHeadersFromContext(ctx)
-		baseURL, client := selectUpstreamTarget(targetAuth, bodyMap, upstreamHeaders, normalizedTransportScope(ocSession))
+		var baseURL string
+		var client *http.Client
+		if targetAuth.ProxyPolicy == "direct_then_pool" {
+			baseURL = selectBaseURLForRequest(targetAuth, bodyMap, upstreamHeaders, normalizedTransportScope(ocSession))
+			client = httpClient
+		} else {
+			baseURL, client = selectUpstreamTarget(targetAuth, bodyMap, upstreamHeaders, normalizedTransportScope(ocSession))
+		}
 		lastBaseURL = baseURL
 		up, err := buildOCRequestWithSubpathAndState(modelID, bodyMap, targetAuth, useGoEndpoint, baseURL, endpointSubpath, ocSession, sessionState)
 		if err != nil {
@@ -638,7 +645,13 @@ func callOpenCodeEndpoint(ctx context.Context, endpointSubpath string, upstreamB
 		}
 		up = up.WithContext(ctx)
 		attemptStart := time.Now()
-		resp, err := client.Do(up)
+		var resp *http.Response
+		var usedProxy string
+		if targetAuth.ProxyPolicy == "direct_then_pool" && pooled {
+			resp, client, usedProxy, err = doWithKeyProxyPolicy(up, keyID)
+		} else {
+			resp, err = client.Do(up)
+		}
 		durationMs := time.Since(attemptStart).Milliseconds()
 		if err != nil {
 			lastErr = err
@@ -665,6 +678,9 @@ func callOpenCodeEndpoint(ctx context.Context, endpointSubpath string, upstreamB
 			if pooled {
 				args = append(args, "key_id", keyID)
 			}
+			if targetAuth.ProxyPolicy == "direct_then_pool" {
+				args = append(args, "egress", egressLabel(usedProxy), "proxy_addr", usedProxy)
+			}
 			log.Info("upstream_attempt", args...)
 			if canRetry {
 				client.CloseIdleConnections()
@@ -689,6 +705,9 @@ func callOpenCodeEndpoint(ctx context.Context, endpointSubpath string, upstreamB
 			}
 			if pooled {
 				args = append(args, "key_id", keyID)
+			}
+			if targetAuth.ProxyPolicy == "direct_then_pool" {
+				args = append(args, "egress", egressLabel(usedProxy), "proxy_addr", usedProxy)
 			}
 			log.Info("upstream_attempt", args...)
 			log.Info("upstream_result",
@@ -735,6 +754,9 @@ func callOpenCodeEndpoint(ctx context.Context, endpointSubpath string, upstreamB
 		}
 		if pooled {
 			args = append(args, "key_id", keyID)
+		}
+		if targetAuth.ProxyPolicy == "direct_then_pool" {
+			args = append(args, "egress", egressLabel(usedProxy), "proxy_addr", usedProxy)
 		}
 		log.Info("upstream_attempt", args...)
 		lastBody = errBody

@@ -28,6 +28,7 @@ var (
 	compiledRules       = []compiledKeywordRule{}
 	debugMode           bool
 	configMu            sync.RWMutex
+	configFileMu        sync.Mutex
 	storedResponses     = map[string]StoredResponseState{}
 	storedResponsesMu   sync.RWMutex
 	routeMu             sync.RWMutex
@@ -53,6 +54,12 @@ func loadConfig(path string) AppConfig {
 }
 
 func saveConfig(path string, cfg AppConfig) error {
+	configFileMu.Lock()
+	defer configFileMu.Unlock()
+	return saveConfigUnlocked(path, cfg)
+}
+
+func saveConfigUnlocked(path string, cfg AppConfig) error {
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
@@ -75,6 +82,25 @@ func saveConfig(path string, cfg AppConfig) error {
 		}
 	}
 	return nil
+}
+
+// persistProxyDisabled stores a proxy's runtime 429 quarantine in the same
+// debug-instance config file so it remains excluded after process restart.
+func persistProxyDisabled(addr string, disabled bool) error {
+	configFileMu.Lock()
+	defer configFileMu.Unlock()
+	cfg := loadConfig(configPath)
+	found := false
+	for i := range cfg.Socks5Proxies {
+		if strings.TrimSpace(cfg.Socks5Proxies[i].Addr) == strings.TrimSpace(addr) {
+			cfg.Socks5Proxies[i].Disabled = disabled
+			found = true
+		}
+	}
+	if !found {
+		return nil
+	}
+	return saveConfigUnlocked(configPath, cfg)
 }
 
 func compileKeywordRules(rules []domain.ModelKeywordRule) ([]domain.ModelKeywordRule, []compiledKeywordRule) {
